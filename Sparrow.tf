@@ -23,13 +23,42 @@ resource "aws_instance" "ansible" {
   security_groups = [ "default" ]
   user_data = <<-EOF
   #!/bin/bash
-  sudo su -
-  useradd ansible
-  echo "password" | passwd ansible
-  sudo yum install ansible -y
-  EOF
-}
 
+  # Install Ansible
+  sudo yum update -y
+  sudo yum install ansible -y
+
+  # Configure SSH for passwordless login
+  sudo sed -i '/^PasswordAuthentication/s/no/yes/' /etc/ssh/sshd_config
+  sudo sed -i '/^#PubkeyAuthentication/s/^#//' /etc/ssh/sshd_config
+  sudo systemctl restart sshd
+  sudo useradd ansible
+  echo "password" | sudo passwd --stdin ansible
+  sudo usermod -aG wheel ansible
+
+
+  # Add ansible_user to sudoers without password
+  echo "ansible ALL=(ALL) NOPASSWD: ALL" | sudo tee -a /etc/sudoers.d/ansible_user
+
+ # Add public IP of another EC2 server to Ansible hosts file
+  echo "[sparrow]" | sudo tee -a /etc/ansible/hosts
+  echo "${aws_instance.sparrow.public_ip}" | sudo tee -a /etc/ansible/hosts
+
+  sudo 
+  EOF
+
+#   provisioner "remote-exec" {
+#     inline = [ 
+#       "sudo yum install ansible -y"
+#      ]
+#      connection {
+#        type = "ssh"
+#        host = self.public_ip
+#        user = ec2-user
+#      }
+#   }
+# }
+}
 resource "aws_instance" "sparrow" {
   tags = {
     Name="sparrow"
@@ -40,16 +69,11 @@ resource "aws_instance" "sparrow" {
     security_groups = [ "default" ]
 }
 
-resource "null_resource" "update_inventory" {
-  provisioner "local-exec" {
-    command = "powershell -File update_inventory.ps1"
-  }
-  depends_on = [ aws_instance.sparrow ]
-}
 
-output "sparrow_ip" {
-  value = aws_instance.sparrow.public_ip
-}
+
+# output "sparrow_ip" {
+#   value = aws_instance.sparrow.public_ip
+# }
 output "ansible_ip" {
   value = aws_instance.ansible.public_ip
 }
